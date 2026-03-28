@@ -1,5 +1,7 @@
 # KonQuest Meta Ads MCP
 
+[![PyPI](https://img.shields.io/pypi/v/konquest-meta-ads-mcp)](https://pypi.org/project/konquest-meta-ads-mcp/) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![konquest-meta-ads-mcp MCP server](https://glama.ai/mcp/servers/brandu-mos/konquest-meta-ads-mcp/badges/score.svg)](https://glama.ai/mcp/servers/brandu-mos/konquest-meta-ads-mcp)
+
 Supervised Meta Ads Operating System for Claude Code.
 
 ## Open-Core Model
