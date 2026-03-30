@@ -174,7 +174,7 @@ def run_validation(
 
     # --- Category B: Campaign Structure Validation ---
     if "B" in categories:
-        _run_structure_checks(result, target_object_type, payload)
+        _run_structure_checks(result, target_object_type, payload, action_class)
 
     # --- Category C: Tracking Validation ---
     if "C" in categories:
@@ -225,12 +225,22 @@ def _run_creative_checks(result: ValidationResult, manifest_ref: Optional[str], 
     result.warnings.append("Category A (Creative) validation skipped - not implemented")
 
 
-def _run_structure_checks(result: ValidationResult, object_type: str, payload: dict):
+def _run_structure_checks(result: ValidationResult, object_type: str, payload: dict, action_class: Optional[ActionClass] = None):
     """Category B: Campaign structure validation checks."""
     # TODO: Phase v1.3 - Full structure validation
     # For now, basic checks
 
-    # Check that PAUSED status is set for creates
+    # Check that PAUSED status is set for creates.
+    # Skip for ACTIVATE actions - setting status=ACTIVE is the entire point.
+    if action_class == ActionClass.ACTIVATE:
+        result.checks.append(CheckResult(
+            category="B",
+            check_name="created_as_paused",
+            status=CheckStatus.PASS,
+            message="ACTIVATE action - status=ACTIVE is expected",
+        ))
+        return
+
     status = payload.get("status", "PAUSED")
     if status == "PAUSED":
         result.checks.append(CheckResult(
