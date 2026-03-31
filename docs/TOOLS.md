@@ -202,7 +202,7 @@ Create a new campaign (always PAUSED, hard enforced, no override).
 - `account_id` (str): Ad account ID.
 - `name` (str): Campaign name. Greek text validated for encoding integrity.
 - `objective` (str): Outcome-based only: OUTCOME_AWARENESS, OUTCOME_ENGAGEMENT, OUTCOME_LEADS, OUTCOME_SALES, OUTCOME_TRAFFIC, OUTCOME_APP_PROMOTION.
-- `special_ad_categories` (str, optional): Comma-separated: CREDIT, EMPLOYMENT, HOUSING, ISSUES_ELECTIONS_POLITICS.
+- `special_ad_categories` (str, optional): Comma-separated: FINANCIAL_PRODUCTS_SERVICES, EMPLOYMENT, HOUSING, ISSUES_ELECTIONS_POLITICS. (Note: CREDIT was deprecated in v25.0.)
 
 **Safety corridor:**
 1. Input validation - rejects legacy/unknown objectives, invalid categories
