@@ -106,7 +106,8 @@ class TestSkippedCategories:
     """Verify that unimplemented validator categories are honestly reported."""
 
     def test_activation_reports_skipped_categories(self):
-        """ACTIVATE runs all 6 categories - A, C, D should report SKIPPED."""
+        """ACTIVATE runs all 6 categories - C (tracking) should report SKIPPED.
+        A (creative) and D (compliance) are now implemented and no longer skip."""
         result = run_validation(
             action_class=ActionClass.ACTIVATE,
             target_account_id="act_123",
@@ -116,8 +117,8 @@ class TestSkippedCategories:
         )
         check_messages = [c.message for c in result.checks]
         skipped_msgs = [m for m in check_messages if "SKIPPED" in m]
-        # Categories A, C, D should all report SKIPPED
-        assert len(skipped_msgs) >= 3, f"Expected 3+ SKIPPED categories, got {len(skipped_msgs)}: {skipped_msgs}"
+        # Category C (tracking) is still deferred to corridor gates
+        assert len(skipped_msgs) >= 1, f"Expected at least 1 SKIPPED category (C), got {len(skipped_msgs)}: {skipped_msgs}"
 
     def test_skipped_categories_are_warnings_not_passes(self):
         """Unimplemented categories must be WARN, never PASS."""

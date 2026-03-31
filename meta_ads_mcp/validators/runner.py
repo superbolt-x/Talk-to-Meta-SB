@@ -210,25 +210,89 @@ def run_validation(
 
 
 def _run_creative_checks(result: ValidationResult, manifest_ref: Optional[str], payload: dict):
-    """Category A: Creative validation - NOT IMPLEMENTED.
+    """Category A: Creative validation."""
+    from meta_ads_mcp.validators.creative import validate_manifest, validate_no_duplicate_creative
 
-    Creative validation (manifest integrity, duplicate prevention, CTA/URL consistency)
-    is not yet implemented in the validator framework. Corridor-level checks in
-    create_ad_from_manifest handle manifest validation and duplicate detection directly.
-    """
-    result.checks.append(CheckResult(
-        category="A",
-        check_name="creative_validation",
-        status=CheckStatus.WARN,
-        message="SKIPPED: Creative validation not implemented in validator framework. Corridor-level manifest checks still apply.",
-    ))
-    result.warnings.append("Category A (Creative) validation skipped - not implemented")
+    if not manifest_ref:
+        result.checks.append(CheckResult(
+            category="A",
+            check_name="manifest_present",
+            status=CheckStatus.WARN,
+            message="No manifest_ref provided - skipping creative validation. "
+                    "Corridor-level checks still apply.",
+        ))
+        result.warnings.append("Category A (Creative): no manifest_ref provided")
+        return
+
+    # A1: Manifest structure validation
+    manifest_result = validate_manifest(manifest_ref)
+    if manifest_result["valid"]:
+        result.checks.append(CheckResult(
+            category="A",
+            check_name="manifest_valid",
+            status=CheckStatus.PASS,
+            message=(
+                f"Manifest validated: {manifest_result['creative_count']} creative(s), "
+                f"{manifest_result['variant_count']} variant(s)"
+            ),
+        ))
+    else:
+        for issue in manifest_result["issues"]:
+            result.checks.append(CheckResult(
+                category="A",
+                check_name="manifest_valid",
+                status=CheckStatus.FAIL,
+                message=issue,
+                remediation="Fix the manifest file before proceeding.",
+            ))
+            result.blocking_issues.append(f"Manifest issue: {issue}")
+
+    for warning in manifest_result.get("warnings", []):
+        result.warnings.append(f"Manifest: {warning}")
+
+    # A2: Duplicate creative check (only if manifest loaded OK)
+    if manifest_result["valid"]:
+        try:
+            import json
+            with open(manifest_ref, "r", encoding="utf-8") as f:
+                manifest_data = json.load(f)
+            for creative in manifest_data.get("creatives", []):
+                lcid = creative.get("logical_creative_id", "")
+                if not lcid:
+                    continue
+                dup_result = validate_no_duplicate_creative(lcid)
+                if dup_result["duplicate_found"]:
+                    result.checks.append(CheckResult(
+                        category="A",
+                        check_name=f"duplicate_check_{lcid}",
+                        status=CheckStatus.WARN,
+                        message=(
+                            f"Creative '{lcid}' already exists in "
+                            f"{len(dup_result['locations'])} location(s)"
+                        ),
+                        remediation="Review existing creatives - this may be an accidental duplicate.",
+                    ))
+                    result.warnings.append(f"Possible duplicate creative: '{lcid}'")
+                else:
+                    result.checks.append(CheckResult(
+                        category="A",
+                        check_name=f"duplicate_check_{lcid}",
+                        status=CheckStatus.PASS,
+                        message=f"No duplicate found for creative '{lcid}'",
+                    ))
+        except (OSError, Exception) as e:
+            result.checks.append(CheckResult(
+                category="A",
+                check_name="duplicate_check",
+                status=CheckStatus.WARN,
+                message=f"Duplicate check could not complete: {e}",
+            ))
+            result.warnings.append("Duplicate check skipped - error reading manifest")
 
 
 def _run_structure_checks(result: ValidationResult, object_type: str, payload: dict, action_class: Optional[ActionClass] = None):
     """Category B: Campaign structure validation checks."""
-    # TODO: Phase v1.3 - Full structure validation
-    # For now, basic checks
+    from meta_ads_mcp.validators.structure import validate_campaign_structure, validate_naming_convention
 
     # Check that PAUSED status is set for creates.
     # Skip for ACTIVATE actions - setting status=ACTIVE is the entire point.
@@ -239,25 +303,87 @@ def _run_structure_checks(result: ValidationResult, object_type: str, payload: d
             status=CheckStatus.PASS,
             message="ACTIVATE action - status=ACTIVE is expected",
         ))
-        return
+    else:
+        status = payload.get("status", "PAUSED")
+        if status == "PAUSED":
+            result.checks.append(CheckResult(
+                category="B",
+                check_name="created_as_paused",
+                status=CheckStatus.PASS,
+                message="Object will be created as PAUSED",
+            ))
+        elif status == "ACTIVE":
+            result.checks.append(CheckResult(
+                category="B",
+                check_name="created_as_paused",
+                status=CheckStatus.FAIL,
+                message="Object is being created as ACTIVE - this bypasses the activation gate",
+                remediation="Set status to PAUSED. Activation requires separate user confirmation.",
+            ))
+            result.blocking_issues.append("Cannot create objects as ACTIVE - must be PAUSED first")
 
-    status = payload.get("status", "PAUSED")
-    if status == "PAUSED":
-        result.checks.append(CheckResult(
-            category="B",
-            check_name="created_as_paused",
-            status=CheckStatus.PASS,
-            message="Object will be created as PAUSED",
-        ))
-    elif status == "ACTIVE":
-        result.checks.append(CheckResult(
-            category="B",
-            check_name="created_as_paused",
-            status=CheckStatus.FAIL,
-            message="Object is being created as ACTIVE - this bypasses the activation gate",
-            remediation="Set status to PAUSED. Activation requires separate user confirmation.",
-        ))
-        result.blocking_issues.append("Cannot create objects as ACTIVE - must be PAUSED first")
+    # Campaign-level structure checks
+    if object_type == "campaign" and payload:
+        objective = payload.get("objective")
+        archetype = payload.get("archetype", "hybrid")
+        budget = payload.get("daily_budget") or payload.get("lifetime_budget")
+
+        if objective:
+            struct = validate_campaign_structure(
+                objective=objective,
+                archetype=archetype,
+                budget=budget or 0,
+            )
+            if struct["valid"]:
+                result.checks.append(CheckResult(
+                    category="B",
+                    check_name="campaign_structure",
+                    status=CheckStatus.PASS if not struct["warnings"] else CheckStatus.WARN,
+                    message="Campaign structure valid" if not struct["warnings"] else struct["warnings"][0],
+                ))
+            else:
+                for issue in struct["issues"]:
+                    result.checks.append(CheckResult(
+                        category="B",
+                        check_name="campaign_structure",
+                        status=CheckStatus.FAIL,
+                        message=issue,
+                        remediation="Fix campaign structure before proceeding.",
+                    ))
+                    result.blocking_issues.append(f"Structure: {issue}")
+            for w in struct.get("warnings", []):
+                result.warnings.append(f"Structure: {w}")
+
+    # Naming convention check
+    name = payload.get("name")
+    if name:
+        naming = validate_naming_convention(name, object_type)
+        if not naming["valid"]:
+            for issue in naming["issues"]:
+                result.checks.append(CheckResult(
+                    category="B",
+                    check_name="naming_convention",
+                    status=CheckStatus.FAIL,
+                    message=issue,
+                    remediation="Fix name before proceeding.",
+                ))
+                result.blocking_issues.append(f"Naming: {issue}")
+        elif naming.get("warnings"):
+            result.checks.append(CheckResult(
+                category="B",
+                check_name="naming_convention",
+                status=CheckStatus.WARN,
+                message=naming["warnings"][0],
+            ))
+            for w in naming["warnings"]:
+                result.warnings.append(f"Naming: {w}")
+        else:
+            result.checks.append(CheckResult(
+                category="B",
+                check_name="naming_convention",
+                status=CheckStatus.PASS,
+                message=f"Name follows convention: '{name}'",
+            ))
 
 
 def _run_tracking_checks(result: ValidationResult, account_id: str, payload: dict):
@@ -278,24 +404,56 @@ def _run_tracking_checks(result: ValidationResult, account_id: str, payload: dic
 
 
 def _run_compliance_checks(result: ValidationResult, payload: dict, safety_tier: int):
-    """Category D: Compliance validation - NOT IMPLEMENTED.
+    """Category D: Compliance validation."""
+    from meta_ads_mcp.validators.compliance import validate_compliance
 
-    Compliance checks (special ad categories, copy-creative alignment, mutation risk)
-    are not yet implemented. Safety tier classification is handled by safety/tiers.py
-    and enforced by the operational checks (Category E) and corridor gates.
-    """
-    result.checks.append(CheckResult(
-        category="D",
-        check_name="compliance_validation",
-        status=CheckStatus.WARN,
-        message="SKIPPED: Compliance validation not implemented. Safety tier enforcement is in Category E.",
-    ))
-    result.warnings.append("Category D (Compliance) validation skipped - not implemented")
+    compliance = validate_compliance(payload)
 
-    # Safety tier confirmation is still enforced via operational checks (Category E)
+    if compliance["valid"]:
+        risk = compliance.get("risk_level", "low")
+        sac = compliance.get("sac_flags", [])
+        msg = f"Compliance OK - risk level: {risk}"
+        if sac:
+            msg += f", SAC flags: {sac}"
+        result.checks.append(CheckResult(
+            category="D",
+            check_name="compliance_check",
+            status=CheckStatus.PASS,
+            message=msg,
+        ))
+    else:
+        for issue in compliance["issues"]:
+            result.checks.append(CheckResult(
+                category="D",
+                check_name="compliance_check",
+                status=CheckStatus.FAIL,
+                message=issue,
+                remediation="Fix compliance issue before proceeding.",
+            ))
+            result.blocking_issues.append(f"Compliance: {issue}")
+
+    for warning in compliance.get("warnings", []):
+        result.checks.append(CheckResult(
+            category="D",
+            check_name="compliance_warning",
+            status=CheckStatus.WARN,
+            message=warning,
+        ))
+        result.warnings.append(f"Compliance: {warning}")
+
+    # Safety tier confirmation enforcement
     if safety_tier == 1:
         result.confirmation_required = True
         result.confirmation_reason = "Tier 1 action requires explicit user confirmation"
+
+    # High-risk mutation also requires confirmation
+    risk_level = compliance.get("risk_level", "low")
+    if risk_level == "high" and not result.confirmation_required:
+        result.confirmation_required = True
+        result.confirmation_reason = (
+            result.confirmation_reason or
+            "High-risk mutation requires explicit user confirmation"
+        )
 
 
 def _run_operational_checks(result: ValidationResult, action_class: ActionClass, safety_tier: int):
