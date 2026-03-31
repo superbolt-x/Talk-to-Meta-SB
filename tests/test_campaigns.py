@@ -100,7 +100,7 @@ class TestUpdateCampaignInputValidation:
         try:
             result = update_campaign(
                 campaign_id="123456789",
-                special_ad_categories="CREDIT,HOUSING",
+                special_ad_categories="FINANCIAL_PRODUCTS_SERVICES,HOUSING",
             )
             assert result.get("blocked_at") != "input_validation"
         except MetaAPIError:
