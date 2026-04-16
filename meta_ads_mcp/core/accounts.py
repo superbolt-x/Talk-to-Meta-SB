@@ -14,7 +14,7 @@ from facebook_business.exceptions import FacebookRequestError
 
 from meta_ads_mcp.server import mcp
 from meta_ads_mcp.core.api import api_client, MetaAPIError
-from meta_ads_mcp.core.auth import verify_token_and_permissions, get_business_id
+from meta_ads_mcp.core.auth import verify_token_and_permissions
 
 logger = logging.getLogger("meta-ads-mcp.accounts")
 
@@ -44,28 +44,14 @@ def get_ad_accounts(limit: int = 50) -> dict:
     api_client._ensure_initialized()
 
     try:
-        business_id = get_business_id()
-        if business_id:
-            # Get accounts via business manager (preferred for agency setup)
-            result = api_client.graph_get(
-                f"/{business_id}/owned_ad_accounts",
-                fields=[
-                    "id", "name", "account_status", "currency",
-                    "timezone_name", "amount_spent", "balance",
-                    "business", "funding_source_details",
-                ],
-                params={"limit": str(limit)},
-            )
-        else:
-            # Fallback: get accounts via user
-            result = api_client.graph_get(
-                "/me/adaccounts",
-                fields=[
-                    "id", "name", "account_status", "currency",
-                    "timezone_name", "amount_spent", "balance",
-                ],
-                params={"limit": str(limit)},
-            )
+        result = api_client.graph_get(
+            "/me/adaccounts",
+            fields=[
+                "id", "name", "account_status", "currency",
+                "timezone_name", "amount_spent", "balance",
+            ],
+            params={"limit": str(limit)},
+        )
 
         accounts = result.get("data", [])
 
