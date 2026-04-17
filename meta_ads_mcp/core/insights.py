@@ -284,6 +284,12 @@ def _normalize_metrics(row: dict, archetype: str = "hybrid", custom_conversion_n
     conversion_values_raw = row.get("conversion_values", [])
 
     pixel_conversions: dict[str, dict] = {}
+    # Scan actions array for pixel custom conversions
+    for item in actions:
+        action_type = item.get("action_type", "")
+        if action_type.startswith(_PIXEL_CUSTOM_PREFIX):
+            event_name = action_type[len(_PIXEL_CUSTOM_PREFIX):]
+            pixel_conversions.setdefault(event_name, {})["count"] = item.get("value")
     for item in conversions_raw:
         action_type = item.get("action_type", "")
         if action_type.startswith(_PIXEL_CUSTOM_PREFIX):
