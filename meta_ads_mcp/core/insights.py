@@ -144,7 +144,30 @@ def _extract_roas(action_values: list[dict]) -> Optional[str]:
     return None
 
 
-def _normalize_metrics(row: dict, archetype: str = "hybrid") -> dict:
+def _fetch_custom_conversion_names(account_id: str) -> dict[str, str]:
+    """Fetch custom conversion names for an account. Returns {conversion_id: name} mapping."""
+    try:
+        acc_id = ensure_account_id_format(account_id)
+        result = api_client.graph_get(
+            f"/{acc_id}/customconversions",
+            fields=["id", "name"],
+            params={"limit": "200"},
+        )
+        return {
+            item["id"]: item["name"]
+            for item in result.get("data", [])
+            if "id" in item and "name" in item
+        }
+    except Exception as e:
+        logger.debug("Could not fetch custom conversion names: %s", e)
+        return {}
+
+
+_PIXEL_CUSTOM_PREFIX = "offsite_conversion.fb_pixel_custom."
+_CUSTOM_CONV_PREFIX = "offsite_conversion.custom."
+
+
+def _normalize_metrics(row: dict, archetype: str = "hybrid", custom_conversion_names: dict | None = None) -> dict:
     """
     Normalize a single insights row into a consistent metric structure.
 
@@ -254,6 +277,43 @@ def _normalize_metrics(row: dict, archetype: str = "hybrid") -> dict:
     purchase_revenue = _extract_roas(action_values)
     if purchase_revenue:
         normalized["revenue"] = purchase_revenue
+
+    # Pixel custom conversions: offsite_conversion.fb_pixel_custom.<EventName>
+    # Strip the prefix and group under "pixel_conversions"
+    conversions_raw = row.get("conversions", [])
+    conversion_values_raw = row.get("conversion_values", [])
+
+    pixel_conversions: dict[str, dict] = {}
+    for item in conversions_raw:
+        action_type = item.get("action_type", "")
+        if action_type.startswith(_PIXEL_CUSTOM_PREFIX):
+            event_name = action_type[len(_PIXEL_CUSTOM_PREFIX):]
+            pixel_conversions.setdefault(event_name, {})["count"] = item.get("value")
+    for item in conversion_values_raw:
+        action_type = item.get("action_type", "")
+        if action_type.startswith(_PIXEL_CUSTOM_PREFIX):
+            event_name = action_type[len(_PIXEL_CUSTOM_PREFIX):]
+            pixel_conversions.setdefault(event_name, {})["value"] = item.get("value")
+    if pixel_conversions:
+        normalized["pixel_conversions"] = pixel_conversions
+
+    # Custom conversions: offsite_conversion.custom.<ID> -> resolved name
+    custom_conversions: dict[str, dict] = {}
+    names_map = custom_conversion_names or {}
+    for item in conversions_raw:
+        action_type = item.get("action_type", "")
+        if action_type.startswith(_CUSTOM_CONV_PREFIX):
+            conv_id = action_type[len(_CUSTOM_CONV_PREFIX):]
+            conv_name = names_map.get(conv_id, conv_id)
+            custom_conversions.setdefault(conv_name, {})["count"] = item.get("value")
+    for item in conversion_values_raw:
+        action_type = item.get("action_type", "")
+        if action_type.startswith(_CUSTOM_CONV_PREFIX):
+            conv_id = action_type[len(_CUSTOM_CONV_PREFIX):]
+            conv_name = names_map.get(conv_id, conv_id)
+            custom_conversions.setdefault(conv_name, {})["value"] = item.get("value")
+    if custom_conversions:
+        normalized["custom_conversions"] = custom_conversions
 
     return normalized
 
@@ -396,6 +456,7 @@ def get_insights(
 
     # Select fields - add level-specific ID fields
     fields = list(CORE_METRICS)
+    fields.append("account_id")  # needed for custom conversion name resolution
     if level == "campaign":
         fields.extend(["campaign_id", "campaign_name"])
     elif level == "adset":
@@ -422,8 +483,18 @@ def get_insights(
                 "rate_limit_usage_pct": api_client.rate_limits.max_usage_pct,
             }
 
+        # Resolve account ID for custom conversion name lookup
+        if object_id.startswith("act_"):
+            account_id_for_names = object_id
+        else:
+            account_id_for_names = rows[0].get("account_id") if rows else None
+
+        custom_conversion_names: dict[str, str] = {}
+        if account_id_for_names:
+            custom_conversion_names = _fetch_custom_conversion_names(account_id_for_names)
+
         # Normalize all rows
-        normalized_rows = [_normalize_metrics(row, archetype) for row in rows]
+        normalized_rows = [_normalize_metrics(row, archetype, custom_conversion_names) for row in rows]
 
         # Build response
         response: dict[str, Any] = {
