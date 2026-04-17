@@ -306,6 +306,12 @@ def _normalize_metrics(row: dict, archetype: str = "hybrid", custom_conversion_n
     # Custom conversions: offsite_conversion.custom.<ID> -> resolved name
     custom_conversions: dict[str, dict] = {}
     names_map = custom_conversion_names or {}
+    for item in actions:
+        action_type = item.get("action_type", "")
+        if action_type.startswith(_CUSTOM_CONV_PREFIX):
+            conv_id = action_type[len(_CUSTOM_CONV_PREFIX):]
+            conv_name = names_map.get(conv_id, conv_id)
+            custom_conversions.setdefault(conv_name, {})["count"] = item.get("value")
     for item in conversions_raw:
         action_type = item.get("action_type", "")
         if action_type.startswith(_CUSTOM_CONV_PREFIX):
