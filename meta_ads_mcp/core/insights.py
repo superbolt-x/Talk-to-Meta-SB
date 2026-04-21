@@ -24,6 +24,7 @@ CORE_METRICS = [
     "spend", "impressions", "reach", "frequency",
     "clicks", "cpc", "cpm", "ctr",
     "actions", "action_values",
+    "catalog_segment_actions", "catalog_segment_value",
     "cost_per_action_type", "cost_per_unique_action_type",
     "conversions", "conversion_values", "cost_per_conversion",
     "website_purchase_roas",
@@ -277,6 +278,24 @@ def _normalize_metrics(row: dict, archetype: str = "hybrid", custom_conversion_n
     purchase_revenue = _extract_roas(action_values)
     if purchase_revenue:
         normalized["revenue"] = purchase_revenue
+
+    # Catalog segment actions (shared items / retargeting catalog)
+    catalog_segment_actions = row.get("catalog_segment_actions", [])
+    catalog_segment_value = row.get("catalog_segment_value", [])
+
+    _catalog_action_map = {
+        "omni_view_content": "view_content_with_shared_items",
+        "omni_add_to_cart": "add_to_cart_with_shared_items",
+        "omni_purchase": "purchase_with_shared_items",
+    }
+    for action_type, key in _catalog_action_map.items():
+        val = _extract_action_value(catalog_segment_actions, action_type)
+        if val is not None:
+            normalized[key] = val
+
+    revenue_shared = _extract_action_value(catalog_segment_value, "omni_purchase")
+    if revenue_shared is not None:
+        normalized["revenue_with_shared_items"] = revenue_shared
 
     # Pixel custom conversions: offsite_conversion.fb_pixel_custom.<EventName>
     # Strip the prefix and group under "pixel_conversions"
