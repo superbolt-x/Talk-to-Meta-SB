@@ -293,7 +293,7 @@ def _normalize_metrics(row: dict, archetype: str = "hybrid", custom_conversion_n
         if val is not None:
             normalized[key] = val
 
-    revenue_shared = _extract_action_value(catalog_segment_value, "omni_purchase")
+    revenue_shared = _extract_roas(catalog_segment_value)
     if revenue_shared is not None:
         normalized["revenue_with_shared_items"] = revenue_shared
 
