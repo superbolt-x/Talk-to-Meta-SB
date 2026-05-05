@@ -422,7 +422,7 @@ def get_insights(
     level: Optional[str] = None,
     archetype: str = "hybrid",
     compact: bool = True,
-    limit: int = 50,
+    limit: int = 1000,
 ) -> dict:
     """
     Get performance insights for any Meta Ads object (account, campaign, ad set, or ad).
@@ -442,7 +442,7 @@ def get_insights(
         archetype: Account archetype for metric selection: 'ecommerce', 'lead_gen',
             'awareness', 'traffic', 'hybrid', 'messages'. Default 'hybrid' (all metrics).
         compact: If true, return a compact operator-friendly summary alongside raw data.
-        limit: Max rows for breakdown or level queries (default 50).
+        limit: Max rows for breakdown or level queries (default 1000).
     """
     api_client._ensure_initialized()
 
@@ -452,7 +452,7 @@ def get_insights(
             object_id = ensure_account_id_format(object_id)
 
     # Build params
-    params: dict[str, str] = {"limit": str(min(limit, 200))}
+    params: dict[str, str] = {"limit": str(min(limit, 1000))}
 
     # Handle time range
     if "," in time_range:
